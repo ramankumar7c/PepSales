@@ -2,6 +2,71 @@
 
 A robust notification service that supports email, SMS, and in-app notifications with queue-based processing and retry mechanisms.
 
+## Live Demo
+
+The service is deployed at: [https://pepsales-8vmw.onrender.com](https://pepsales-8vmw.onrender.com)
+
+### Testing the Deployed Service
+
+You can test the service using Postman or curl. Here are some example requests:
+
+1. **Health Check**
+```bash
+curl -X GET https://pepsales-8vmw.onrender.com/health
+```
+
+2. **Send SMS Notification**
+```bash
+curl -X POST https://pepsales-8vmw.onrender.com/notifications \
+-H "Content-Type: application/json" \
+-d '{
+    "type": "SMS",
+    "userId": "user123",
+    "title": "SMS Alert",
+    "message": "Your order has been shipped",
+    "metadata": {
+        "phoneNumber": "+919934731011"
+    }
+}'
+```
+
+3. **Send Email Notification**
+```bash
+curl -X POST https://pepsales-8vmw.onrender.com/notifications \
+-H "Content-Type: application/json" \
+-d '{
+    "type": "EMAIL",
+    "userId": "user123",
+    "title": "Welcome Email",
+    "message": "Welcome to our service!",
+    "metadata": {
+        "email": "your-email@example.com"
+    }
+}'
+```
+
+4. **Send In-App Notification**
+```bash
+curl -X POST https://pepsales-8vmw.onrender.com/notifications \
+-H "Content-Type: application/json" \
+-d '{
+    "type": "IN_APP",
+    "userId": "user123",
+    "title": "New Message",
+    "message": "You have a new message",
+    "metadata": {
+        "priority": "high"
+    }
+}'
+```
+
+5. **Get User Notifications**
+```bash
+curl -X GET https://pepsales-8vmw.onrender.com/notifications/users/user123
+```
+
+Note: The deployed service has SMS and In-App notifications working. Email notifications require proper SMTP configuration.
+
 ## Features
 
 - Multiple notification types (Email, SMS, In-app)
@@ -13,7 +78,7 @@ A robust notification service that supports email, SMS, and in-app notifications
 ## Prerequisites
 
 - Node.js (v14 or higher)
-- RabbitMQ server
+- RabbitMQ server (or CloudAMQP account)
 - SMTP server (for email notifications)
 - Twilio account (for SMS notifications)
 
@@ -26,7 +91,10 @@ Create a `.env` file in the root directory with the following variables:
 PORT=3000
 
 # RabbitMQ Configuration
-RABBITMQ_URL=amqp://localhost
+# For local development:
+# RABBITMQ_URL=amqp://localhost
+# For production (CloudAMQP):
+RABBITMQ_URL=amqp://your-cloudamqp-url
 
 # SMTP (Email) Configuration
 SMTP_HOST=smtp.gmail.com
@@ -40,6 +108,17 @@ TWILIO_ACCOUNT_SID=your-account-sid
 TWILIO_AUTH_TOKEN=your-auth-token
 TWILIO_PHONE_NUMBER=your-twilio-phone
 ```
+
+## Queue System
+
+The service uses CloudAMQP for message queuing in production, which provides:
+- Managed RabbitMQ service
+- Automatic scaling
+- High availability
+- Message persistence
+- Monitoring and metrics
+
+For local development, you can use a local RabbitMQ instance.
 
 ## Installation
 
