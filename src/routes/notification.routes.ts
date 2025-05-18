@@ -4,10 +4,10 @@ import { NotificationController } from '../controllers/notification.controller';
 const router = Router();
 const notificationController = new NotificationController();
 
-// POST /notifications
-router.post('/', (req, res) => notificationController.createNotification(req, res));
+// Send notification
+router.post('/', notificationController.sendNotification);
 
-// GET /users/:id/notifications
-router.get('/users/:id/notifications', (req, res) => notificationController.getUserNotifications(req, res));
+// Get user notifications
+router.get('/users/:id', notificationController.getUserNotifications);
 
-export default router; 
+export const notificationRoutes = router; 

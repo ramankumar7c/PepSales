@@ -28,80 +28,105 @@ const twilioClient = twilio(
 );
 
 export class NotificationService {
+  private emailTransporter: nodemailer.Transporter;
+  private twilioClient: twilio.Twilio;
   private queueService: QueueService;
 
   constructor() {
-    this.queueService = new QueueService();
-    this.initializeQueue();
+    // Initialize email transporter
+    this.emailTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT),
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+
+    // Initialize Twilio client
+    this.twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+
+    // Initialize queue service
+    this.queueService = new QueueService(this);
   }
 
-  private async initializeQueue(): Promise<void> {
-    await this.queueService.connect();
-    await this.queueService.consumeNotifications(this.processNotification.bind(this));
+  async sendNotification(notification: Notification): Promise<Notification> {
+    try {
+      // Enqueue the notification
+      await this.queueService.enqueueNotification(notification);
+      return notification;
+    } catch (error) {
+      console.error('Failed to enqueue notification:', error);
+      throw error;
+    }
   }
 
-  async createNotification(dto: CreateNotificationDto): Promise<Notification> {
-    const notification: Notification = {
-      id: uuidv4(),
-      ...dto,
-      status: NotificationStatus.PENDING,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    notifications.push(notification);
-    await this.queueService.publishNotification(notification);
-    return notification;
-  }
-
-  async getUserNotifications(userId: string): Promise<Notification[]> {
-    return notifications.filter(n => n.userId === userId);
-  }
-
-  private async processNotification(notification: Notification): Promise<void> {
+  async processNotification(notification: Notification): Promise<void> {
     try {
       switch (notification.type) {
-        case NotificationType.EMAIL:
+        case 'EMAIL':
           await this.sendEmail(notification);
           break;
-        case NotificationType.SMS:
+        case 'SMS':
           await this.sendSMS(notification);
           break;
-        case NotificationType.IN_APP:
+        case 'IN_APP':
           await this.sendInAppNotification(notification);
           break;
+        default:
+          throw new Error(`Unsupported notification type: ${notification.type}`);
       }
-      
-      notification.status = NotificationStatus.SENT;
-      notification.updatedAt = new Date();
     } catch (error) {
-      notification.status = NotificationStatus.FAILED;
-      notification.updatedAt = new Date();
+      console.error('Failed to process notification:', error);
       throw error;
     }
   }
 
   private async sendEmail(notification: Notification): Promise<void> {
-    await emailTransporter.sendMail({
+    const { email } = notification.metadata;
+    if (!email) {
+      throw new Error('Email address is required for email notifications');
+    }
+
+    await this.emailTransporter.sendMail({
       from: process.env.SMTP_FROM,
-      to: notification.metadata?.email,
+      to: email,
       subject: notification.title,
-      text: notification.message,
+      text: notification.message
     });
   }
 
   private async sendSMS(notification: Notification): Promise<void> {
-    await twilioClient.messages.create({
+    const { phoneNumber } = notification.metadata;
+    if (!phoneNumber) {
+      throw new Error('Phone number is required for SMS notifications');
+    }
+
+    await this.twilioClient.messages.create({
       body: `${notification.title}\n${notification.message}`,
-      to: notification.metadata?.phoneNumber,
-      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phoneNumber,
+      from: process.env.TWILIO_PHONE_NUMBER
     });
   }
 
   private async sendInAppNotification(notification: Notification): Promise<void> {
-    // Implement in-app notification logic (e.g., WebSocket, push notification)
-    // This is a placeholder for the actual implementation
-    console.log('In-app notification:', notification);
+    // For now, just log the notification
+    console.log('In-app notification:', {
+      userId: notification.userId,
+      title: notification.title,
+      message: notification.message,
+      metadata: notification.metadata
+    });
+  }
+
+  async getUserNotifications(userId: string): Promise<Notification[]> {
+    // For now, return an empty array
+    // In a real application, this would fetch from a database
+    return [];
   }
 
   async close(): Promise<void> {

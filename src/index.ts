@@ -1,47 +1,46 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
 import express from 'express';
 import cors from 'cors';
-import notificationRoutes from './routes/notification.routes';
+import dotenv from 'dotenv';
+import { notificationRoutes } from './routes/notification.routes';
+import { QueueService } from './services/queue.service';
 import { NotificationService } from './services/notification.service';
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const notificationService = new NotificationService();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
+// Initialize services
+const notificationService = new NotificationService();
+const queueService = new QueueService(notificationService);
+
 // Routes
 app.use('/notifications', notificationRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+app.get('/health', (_, res) => {
+    res.json({ status: 'ok' });
 });
 
 // Start server
-const server = app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+app.listen(port, async () => {
+    try {
+        await queueService.initialize();
+        console.log(`Server is running on port ${port}`);
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
 });
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Closing server...');
-  await notificationService.close();
-  server.close(() => {
-    console.log('Server closed');
+    console.log('SIGTERM received. Closing queue service...');
+    await queueService.close();
     process.exit(0);
-  });
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT received. Closing server...');
-  await notificationService.close();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
 }); 

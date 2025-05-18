@@ -1,95 +1,121 @@
-import amqp from 'amqplib';
+import amqp, { Channel, Connection } from 'amqplib';
 import { Notification } from '../types/notification';
+import { NotificationService } from './notification.service';
 
 export class QueueService {
-  private connection: amqp.Connection | null = null;
-  private channel: amqp.Channel | null = null;
-  private readonly queueName = 'notifications';
-  private readonly retryQueueName = 'notifications-retry';
-  private readonly maxRetries = 3;
+    private connection: Connection | null = null;
+    private channel: Channel | null = null;
+    private readonly mainQueue = 'notifications';
+    private readonly retryQueue = 'notifications-retry';
+    private readonly maxRetries = 3;
 
-  async connect(): Promise<void> {
-    try {
-      this.connection = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
-      this.channel = await this.connection.createChannel();
-      
-      // Create main queue
-      await this.channel.assertQueue(this.queueName, {
-        durable: true
-      });
+    constructor(private notificationService: NotificationService) {}
 
-      // Create retry queue with dead letter exchange
-      await this.channel.assertQueue(this.retryQueueName, {
-        durable: true,
-        arguments: {
-          'x-dead-letter-exchange': '',
-          'x-dead-letter-routing-key': this.queueName,
-          'x-message-ttl': 60000 // 1 minute delay
+    async initialize(): Promise<void> {
+        try {
+            this.connection = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
+            this.channel = await this.connection.createChannel();
+
+            // Create queues
+            await this.channel.assertQueue(this.mainQueue, { durable: true });
+            await this.channel.assertQueue(this.retryQueue, { 
+                durable: true,
+                arguments: {
+                    'x-dead-letter-exchange': '',
+                    'x-dead-letter-routing-key': this.mainQueue,
+                    'x-message-ttl': 60000 // 1 minute in milliseconds
+                }
+            });
+
+            // Start consuming messages
+            await this.consumeMessages();
+            console.log('Queue service initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize queue service:', error);
+            throw error;
         }
-      });
-
-      console.log('Connected to RabbitMQ');
-    } catch (error) {
-      console.error('Failed to connect to RabbitMQ:', error);
-      throw error;
-    }
-  }
-
-  async publishNotification(notification: Notification): Promise<void> {
-    if (!this.channel) {
-      throw new Error('Queue channel not initialized');
     }
 
-    const message = {
-      notification,
-      retryCount: 0
-    };
-
-    await this.channel.sendToQueue(
-      this.queueName,
-      Buffer.from(JSON.stringify(message)),
-      { persistent: true }
-    );
-  }
-
-  async consumeNotifications(callback: (notification: Notification) => Promise<void>): Promise<void> {
-    if (!this.channel) {
-      throw new Error('Queue channel not initialized');
-    }
-
-    await this.channel.consume(this.queueName, async (msg) => {
-      if (!msg) return;
-
-      try {
-        const { notification, retryCount } = JSON.parse(msg.content.toString());
-        await callback(notification);
-        this.channel?.ack(msg);
-      } catch (error) {
-        console.error('Error processing notification:', error);
-        
-        const { notification, retryCount } = JSON.parse(msg.content.toString());
-        
-        if (retryCount < this.maxRetries) {
-          // Move to retry queue
-          await this.channel?.sendToQueue(
-            this.retryQueueName,
-            Buffer.from(JSON.stringify({
-              notification,
-              retryCount: retryCount + 1
-            })),
-            { persistent: true }
-          );
-          this.channel?.ack(msg);
-        } else {
-          // Max retries reached, reject message
-          this.channel?.reject(msg, false);
+    async enqueueNotification(notification: Notification): Promise<void> {
+        if (!this.channel) {
+            throw new Error('Queue channel not initialized');
         }
-      }
-    });
-  }
 
-  async close(): Promise<void> {
-    await this.channel?.close();
-    await this.connection?.close();
-  }
+        try {
+            await this.channel.sendToQueue(
+                this.mainQueue,
+                Buffer.from(JSON.stringify(notification)),
+                { persistent: true }
+            );
+            console.log('Notification enqueued:', notification.id);
+        } catch (error) {
+            console.error('Failed to enqueue notification:', error);
+            throw error;
+        }
+    }
+
+    private async consumeMessages(): Promise<void> {
+        if (!this.channel) {
+            throw new Error('Queue channel not initialized');
+        }
+
+        await this.channel.consume(this.mainQueue, async (msg) => {
+            if (!msg) return;
+
+            try {
+                const notification: Notification = JSON.parse(msg.content.toString());
+                console.log('Processing notification:', notification.id);
+
+                // Process the notification
+                await this.notificationService.sendNotification(notification);
+
+                // Acknowledge the message
+                this.channel?.ack(msg);
+                console.log('Notification processed successfully:', notification.id);
+            } catch (error) {
+                console.error('Failed to process notification:', error);
+
+                // Get retry count from message properties
+                const retryCount = (msg.properties.headers?.retryCount as number) || 0;
+
+                if (retryCount < this.maxRetries) {
+                    // Move to retry queue
+                    if (this.channel) {
+                        await this.channel.sendToQueue(
+                            this.retryQueue,
+                            msg.content,
+                            {
+                                persistent: true,
+                                headers: {
+                                    ...msg.properties.headers,
+                                    retryCount: retryCount + 1
+                                }
+                            }
+                        );
+                    }
+                    this.channel?.ack(msg);
+                    console.log(`Notification moved to retry queue (attempt ${retryCount + 1}/${this.maxRetries}):`, notification.id);
+                } else {
+                    // Max retries reached, acknowledge and log
+                    this.channel?.ack(msg);
+                    console.log('Max retries reached for notification:', notification.id);
+                }
+            }
+        });
+    }
+
+    async close(): Promise<void> {
+        try {
+            if (this.channel) {
+                await this.channel.close();
+            }
+            if (this.connection) {
+                await this.connection.close();
+            }
+            console.log('Queue service closed successfully');
+        } catch (error) {
+            console.error('Failed to close queue service:', error);
+            throw error;
+        }
+    }
 } 

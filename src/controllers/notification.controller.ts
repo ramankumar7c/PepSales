@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { NotificationService } from '../services/notification.service';
-import { CreateNotificationDto } from '../types/notification';
+import { Notification } from '../types/notification';
 
 export class NotificationController {
   private notificationService: NotificationService;
@@ -9,23 +9,25 @@ export class NotificationController {
     this.notificationService = new NotificationService();
   }
 
-  async createNotification(req: Request, res: Response): Promise<void> {
+  sendNotification = async (req: Request, res: Response): Promise<void> => {
     try {
-      const dto: CreateNotificationDto = req.body;
-      const notification = await this.notificationService.createNotification(dto);
-      res.status(201).json(notification);
+      const notification: Notification = req.body;
+      const result = await this.notificationService.sendNotification(notification);
+      res.status(201).json(result);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to create notification' });
+      console.error('Error sending notification:', error);
+      res.status(500).json({ error: 'Failed to send notification' });
     }
-  }
+  };
 
-  async getUserNotifications(req: Request, res: Response): Promise<void> {
+  getUserNotifications = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
-      const notifications = await this.notificationService.getUserNotifications(id);
+      const userId = req.params.id;
+      const notifications = await this.notificationService.getUserNotifications(userId);
       res.json(notifications);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch notifications' });
+      console.error('Error getting user notifications:', error);
+      res.status(500).json({ error: 'Failed to get user notifications' });
     }
-  }
+  };
 } 
