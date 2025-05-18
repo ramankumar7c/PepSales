@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { NotificationService } from '../services/notification.service';
-import { Notification } from '../types/notification';
+import { Notification, CreateNotificationDto } from '../types/notification';
 
 export class NotificationController {
   private notificationService: NotificationService;
@@ -11,7 +11,21 @@ export class NotificationController {
 
   sendNotification = async (req: Request, res: Response): Promise<void> => {
     try {
-      const notification: Notification = req.body;
+      const notificationData: CreateNotificationDto = req.body;
+      
+      // Create a complete notification object
+      const notification: Notification = {
+        id: `notif_${Date.now()}`,
+        userId: notificationData.userId,
+        type: notificationData.type,
+        title: notificationData.title,
+        message: notificationData.message,
+        metadata: notificationData.metadata || {},
+        status: 'PENDING',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
       const result = await this.notificationService.sendNotification(notification);
       res.status(201).json(result);
     } catch (error) {
