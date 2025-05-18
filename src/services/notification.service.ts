@@ -7,6 +7,7 @@ export class NotificationService {
     private emailTransporter: nodemailer.Transporter;
     private twilioClient: twilio.Twilio;
     private queueService: QueueService;
+    private notifications: Map<string, Notification[]> = new Map();
 
     constructor() {
         // Initialize email transporter
@@ -32,6 +33,9 @@ export class NotificationService {
 
     async sendNotification(notification: Notification): Promise<Notification> {
         try {
+            // Store the notification
+            this.storeNotification(notification);
+            
             // Enqueue the notification
             await this.queueService.enqueueNotification(notification);
             return notification;
@@ -56,8 +60,13 @@ export class NotificationService {
                 default:
                     throw new Error(`Unsupported notification type: ${notification.type}`);
             }
+            
+            // Update notification status to SENT
+            this.updateNotificationStatus(notification.id, 'SENT');
         } catch (error) {
             console.error('Failed to process notification:', error);
+            // Update notification status to FAILED
+            this.updateNotificationStatus(notification.id, 'FAILED');
             throw error;
         }
     }
@@ -99,9 +108,25 @@ export class NotificationService {
         });
     }
 
-    async getUserNotifications(_userId: string): Promise<Notification[]> {
-        // For now, return an empty array
-        // In a real application, this would fetch from a database
-        return [];
+    private storeNotification(notification: Notification): void {
+        const userNotifications = this.notifications.get(notification.userId) || [];
+        userNotifications.push(notification);
+        this.notifications.set(notification.userId, userNotifications);
+    }
+
+    private updateNotificationStatus(notificationId: string, status: 'SENT' | 'FAILED'): void {
+        for (const [userId, notifications] of this.notifications.entries()) {
+            const notification = notifications.find(n => n.id === notificationId);
+            if (notification) {
+                notification.status = status;
+                notification.updatedAt = new Date().toISOString();
+                this.notifications.set(userId, notifications);
+                break;
+            }
+        }
+    }
+
+    async getUserNotifications(userId: string): Promise<Notification[]> {
+        return this.notifications.get(userId) || [];
     }
 }
