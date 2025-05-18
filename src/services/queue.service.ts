@@ -1,10 +1,10 @@
-import amqp, { Channel, Connection } from 'amqplib';
+import * as amqp from 'amqplib';
 import { Notification } from '../types/notification';
 import { NotificationService } from './notification.service';
 
 export class QueueService {
-    private connection: Connection | null = null;
-    private channel: Channel | null = null;
+    private connection: amqp.Connection | null = null;
+    private channel: amqp.Channel | null = null;
     private readonly mainQueue = 'notifications';
     private readonly retryQueue = 'notifications-retry';
     private readonly maxRetries = 3;
@@ -14,7 +14,14 @@ export class QueueService {
     async initialize(): Promise<void> {
         try {
             this.connection = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://localhost');
+            if (!this.connection) {
+                throw new Error('Failed to create RabbitMQ connection');
+            }
+
             this.channel = await this.connection.createChannel();
+            if (!this.channel) {
+                throw new Error('Failed to create RabbitMQ channel');
+            }
 
             // Create queues
             await this.channel.assertQueue(this.mainQueue, { durable: true });
@@ -67,7 +74,7 @@ export class QueueService {
                 console.log('Processing notification:', notification.id);
 
                 // Process the notification
-                await this.notificationService.sendNotification(notification);
+                await this.notificationService.processNotification(notification);
 
                 // Acknowledge the message
                 this.channel?.ack(msg);
@@ -77,6 +84,7 @@ export class QueueService {
 
                 // Get retry count from message properties
                 const retryCount = (msg.properties.headers?.retryCount as number) || 0;
+                const notification: Notification = JSON.parse(msg.content.toString());
 
                 if (retryCount < this.maxRetries) {
                     // Move to retry queue
@@ -118,4 +126,4 @@ export class QueueService {
             throw error;
         }
     }
-} 
+}
