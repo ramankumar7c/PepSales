@@ -1,9 +1,9 @@
-import * as amqp from 'amqplib';
+import amqp from 'amqplib';
 import { Notification } from '../types/notification';
 import { NotificationService } from './notification.service';
 
 export class QueueService {
-    private connection: amqp.Connection | null = null;
+    private connection: any = null;
     private channel: amqp.Channel | null = null;
     private readonly mainQueue = 'notifications';
     private readonly retryQueue = 'notifications-retry';
