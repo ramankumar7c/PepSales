@@ -25,7 +25,7 @@ curl -X POST https://pepsales-8vmw.onrender.com/notifications \
     "title": "SMS Alert",
     "message": "Your order has been shipped",
     "metadata": {
-        "phoneNumber": "+919934731011"
+        "phoneNumber": "+1234567890"
     }
 }'
 ```
